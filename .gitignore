@@ -70,9 +70,9 @@ source/leisaac/leisaac/devices/lerobot/.cache/left_so101_leader.json
 source/leisaac/leisaac/devices/lerobot/.cache/right_so101_leader.json
 
 # scene assets
-assets/scenes/*
+#assets/scenes/*
 !assets/scenes/.gitkeep
-assets/robots/*
+#assets/robots/*
 !assets/robots/.gitkeep
 
 # greenscreen
