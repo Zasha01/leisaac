@@ -130,6 +130,11 @@ class SO101Leader(Device):
         if reset:
             return ac_dict
         ac_dict['joint_state'] = state['joint_state']
+
+        joint_state = state['joint_state']
+        # --- FIX: invert the shoulder_pan sign ---
+        joint_state["shoulder_pan"] *= -1.0
+        
         ac_dict['motor_limits'] = self._motor_limits
         return ac_dict
 

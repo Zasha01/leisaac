@@ -24,7 +24,7 @@ SO101_FOLLOWER_CFG = ArticulationCfg(
         ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
-        pos=(2.2, -0.61, 0.89),
+        pos=(2.2, -0.61, 0.94),
         rot=(0.0, 0.0, 0.0, 1.0),
         joint_pos={
             "shoulder_pan": 0.0,
@@ -57,11 +57,11 @@ SO101_FOLLOWER_CFG = ArticulationCfg(
 # joint limit written in USD (degree)
 SO101_FOLLOWER_USD_JOINT_LIMLITS = {
     "shoulder_pan": (-110.0, 110.0),
-    "shoulder_lift": (-100.0, 100.0),
-    "elbow_flex": (-100.0, 90.0),
-    "wrist_flex": (-95.0, 95.0),
+    "shoulder_lift": (0.0, 200.0),
+    "elbow_flex": (-180.0, 0.0),
+    "wrist_flex": (-140.0, 68.0),
     "wrist_roll": (-160.0, 160.0),
-    "gripper": (-10, 100.0),
+    "gripper": (-35, 35),
 }
 
 # motor limit written in real device (normalized to related range)
@@ -71,7 +71,7 @@ SO101_FOLLOWER_MOTOR_LIMITS = {
     'elbow_flex': (-100.0, 100.0),
     'wrist_flex': (-100.0, 100.0),
     'wrist_roll': (-100.0, 100.0),
-    'gripper': (0.0, 100.0),
+    'gripper': (-100.0, 100.0),
 }
 
 
