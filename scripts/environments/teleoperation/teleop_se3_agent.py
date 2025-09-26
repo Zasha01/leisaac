@@ -13,6 +13,8 @@ import argparse
 
 from isaaclab.app import AppLauncher
 
+
+
 # add argparse arguments
 parser = argparse.ArgumentParser(description="leisaac teleoperation for leisaac environments.")
 parser.add_argument("--num_envs", type=int, default=1, help="Number of environments to simulate.")
@@ -56,6 +58,165 @@ from isaaclab.managers import TerminationTermCfg
 from leisaac.devices import Se3Keyboard, SO101Leader, BiSO101Leader
 from leisaac.enhance.managers import StreamingRecorderManager
 from leisaac.utils.env_utils import dynamic_reset_gripper_effort_limit_sim
+
+import random
+from pxr import UsdGeom, Gf
+
+import omni.usd
+from pxr import UsdPhysics, PhysxSchema
+
+from pxr import UsdGeom, Gf
+import re
+
+def spawn_red_cube_over_chess():
+    stage = omni.usd.get_context().get_stage()
+    envs_root = stage.GetPrimAtPath("/World/envs")
+    if not envs_root or not envs_root.IsValid():
+        print("[cube] /World/envs not ready.")
+        return
+
+    for env_prim in envs_root.GetChildren():
+        env_ns = env_prim.GetPath().pathString
+        chess_root = stage.GetPrimAtPath(f"{env_ns}/Scene/chess/chess/chess_001")
+        if not chess_root or not chess_root.IsValid():
+            continue
+
+        board_prim = stage.GetPrimAtPath(f"{chess_root.GetPath()}/Board")
+        if not board_prim or not board_prim.IsValid():
+            print(f"[cube] No Board under {chess_root.GetPath()}")
+            continue
+
+        # Create cube prim above the board
+        cube_path = f"{chess_root.GetPath()}/RedCube"
+        cube = UsdGeom.Cube.Define(stage, cube_path)
+
+        # Highlight chess field
+        xform = UsdGeom.Xformable(cube)
+        xform.AddTranslateOp().Set(Gf.Vec3f(0.024, 0.024, -0.00832))   
+        xform.AddScaleOp().Set(Gf.Vec3f(0.022, 0.022, 0.0002))    
+
+        # Make it red
+        cube.CreateDisplayColorAttr([(1.0, 0.0, 0.0)])
+
+        print(f"[cube] Spawned static red cube at {cube_path}")
+
+
+import re
+from pxr import UsdGeom, Gf, Usd
+import omni.usd
+
+from leisaac.chess import init_random_position_from_db, compute_and_highlight_best_move
+# --- Board extents and step (meters) ---
+X_MIN, X_MAX = -0.164,  0.164
+Y_MIN, Y_MAX = -0.164,  0.164
+Z_PLANE       = -0.00832
+STEP_X = (X_MAX - X_MIN) / 7.0   # 0.328 / 7
+STEP_Y = (Y_MAX - Y_MIN) / 7.0
+
+# If you ever need to flip orientation, toggle these:
+FLIP_FILES = True   # True makes 'a' on +X
+FLIP_RANKS = True   # True makes rank 1 on +Y
+
+def _square_center(square: str) -> Gf.Vec3f:
+    m = re.fullmatch(r'([a-hA-H])([1-8])', square.strip())
+    if not m:
+        raise ValueError(f"Invalid square '{square}'. Use like 'e5'.")
+    file_idx = ord(m.group(1).lower()) - ord('a')   # 0..7
+    rank_idx = int(m.group(2)) - 1                  # 0..7
+
+    if FLIP_FILES:
+        file_idx = 7 - file_idx
+    if FLIP_RANKS:
+        rank_idx = 7 - rank_idx
+
+    x = X_MIN + file_idx * STEP_X
+    y = Y_MIN + rank_idx * STEP_Y
+    return Gf.Vec3f(x, y, Z_PLANE)
+
+def highlight_square(square: str):
+    """Spawn or move a static red overlay cube to the given square in all envs."""
+    stage = omni.usd.get_context().get_stage()
+    envs_root = stage.GetPrimAtPath("/World/envs")
+    if not envs_root or not envs_root.IsValid():
+        print("[highlight] /World/envs not ready.")
+        return
+
+    pos = _square_center(square)
+
+    for env_prim in envs_root.GetChildren():
+        env_ns = env_prim.GetPath().pathString
+        chess_root = stage.GetPrimAtPath(f"{env_ns}/Scene/chess/chess/chess_001")
+        if not chess_root or not chess_root.IsValid():
+            continue
+
+        cube_path = f"{chess_root.GetPath()}/Highlight_{square.lower()}"
+        cube = UsdGeom.Cube.Define(stage, cube_path)
+
+        # Reset xform ops so repeated calls overwrite cleanly
+        xform = UsdGeom.Xformable(cube)
+        if xform.GetOrderedXformOps():
+            xform.ClearXformOpOrder()
+
+        # Use your calibrated size and an exact position on the board plane
+        xform.AddTranslateOp().Set(pos)
+        xform.AddScaleOp().Set(Gf.Vec3f(0.022, 0.022, 0.0002))  # your size
+
+        cube.CreateDisplayColorAttr([(1.0, 0.0, 0.0)])
+
+    print(f"[highlight] {square} → ({pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.5f})")
+
+
+def _xy_to_square_in_chess_local(x: float, y: float) -> str:
+    # snap to nearest 0..7 index in each axis
+    fx = round((x - X_MIN) / STEP_X)
+    fy = round((y - Y_MIN) / STEP_Y)
+    fx = max(0, min(7, int(fx)))
+    fy = max(0, min(7, int(fy)))
+    if FLIP_FILES:
+        fx = 7 - fx
+    if FLIP_RANKS:
+        fy = 7 - fy
+    return chr(ord('a') + fx) + str(fy + 1)
+
+def print_chess_positions():
+    """Map each piece to a chess square by projecting into '.../chess_001' local frame."""
+    stage = omni.usd.get_context().get_stage()
+    envs_root = stage.GetPrimAtPath("/World/envs")
+    if not envs_root or not envs_root.IsValid():
+        print("[chess] /World/envs not ready.")
+        return
+
+    # caches for robust bounds & transforms
+    time = Usd.TimeCode.Default()
+    bbox_cache = UsdGeom.BBoxCache(time, includedPurposes=[UsdGeom.Tokens.default_], useExtentsHint=True)
+    xform_cache = UsdGeom.XformCache(time)
+
+    for env_prim in envs_root.GetChildren():
+        env_ns = env_prim.GetPath().pathString
+        chess_root = stage.GetPrimAtPath(f"{env_ns}/Scene/chess/chess/chess_001")
+        if not chess_root or not chess_root.IsValid():
+            continue
+
+        # chess_001 local->world, then invert to get world->chess_001
+        M_world_from_chess = xform_cache.GetLocalToWorldTransform(chess_root)
+        M_chess_from_world = Gf.Matrix4d(M_world_from_chess).GetInverse()
+
+        print(f"\n[chess] Positions in {env_ns}:")
+        for prim in chess_root.GetChildren():
+            name = prim.GetName().lower()
+            if "board" in name or name.startswith("highlight_"):
+                continue
+
+            # world-space AABB center
+            aabb = bbox_cache.ComputeWorldBound(prim).ComputeAlignedBox()
+            c_world = (aabb.GetMin() + aabb.GetMax()) * 0.5  # Gf.Vec3d
+
+            # project into chess_001 local frame
+            c_local = M_chess_from_world.Transform(c_world)
+
+            sq = _xy_to_square_in_chess_local(c_local[0], c_local[1])
+            print(f"  {prim.GetName():<12} -> {sq}    (local x={c_local[0]: .3f}, y={c_local[1]: .3f})")
+
 
 
 class RateLimiter:
@@ -125,6 +286,9 @@ def main():
 
     # create environment
     env: ManagerBasedRLEnv = gym.make(task_name, cfg=env_cfg).unwrapped
+    #highlight_square("c5")
+    #init_random_position_from_db()
+    #print_chess_positions()
     # replace the original recorder manager with the streaming recorder manager
     if args_cli.record:
         del env.recorder_manager
@@ -169,6 +333,8 @@ def main():
     env.reset()
     teleop_interface.reset()
 
+    compute_and_highlight_best_move()
+
     current_recorded_demo_count = 0
 
     start_record_state = False
@@ -187,6 +353,7 @@ def main():
                     env.termination_manager.compute()
             if should_reset_recording_instance:
                 env.reset()
+                compute_and_highlight_best_move()
                 should_reset_recording_instance = False
                 if start_record_state:
                     if args_cli.record:

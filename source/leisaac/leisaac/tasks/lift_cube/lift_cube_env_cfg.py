@@ -21,6 +21,72 @@ from . import mdp
 from ..template import SingleArmTaskSceneCfg, SingleArmTaskEnvCfg, SingleArmTerminationsCfg, SingleArmObservationsCfg
 
 
+# --- Chess stability tweaks for Isaac Sim 4.5 ---
+import omni.usd
+from pxr import UsdPhysics, PhysxSchema, UsdGeom, Sdf
+
+
+
+def stabilize_chess_set():
+    stage = omni.usd.get_context().get_stage()
+    envs_root = stage.GetPrimAtPath("/World/envs")
+    for env in envs_root.GetChildren():
+        print(f"Env: {env.GetPath()}")
+        CHESS_ROOT = stage.GetPrimAtPath(f"{env.GetPath()}/Scene/chess")
+
+    BOARD_PATH = f"{chess_root}/Board"
+
+    # 1) Make the board static-ish (no gravity; high damping)
+    board = stage.GetPrimAtPath(BOARD_PATH)
+    if board:
+        # Ensure it’s a rigid body (so we can set PhysX props), but keep it effectively static
+        UsdPhysics.RigidBodyAPI.Apply(board).CreateRigidBodyEnabledAttr(True)
+        pxa = PhysxSchema.PhysxRigidBodyAPI.Apply(board)
+        pxa.CreateDisableGravityAttr(True)
+        # Extra damping helps kill any residual vibrations from contacts
+        pxa.CreateLinearDampingAttr(2.0)
+        pxa.CreateAngularDampingAttr(2.0)
+
+    # 2) Tune every child under CHESS_ROOT except the Board
+    root = stage.GetPrimAtPath(CHESS_ROOT)
+    if not root:
+        print(f"[chess] Root not found: {CHESS_ROOT}")
+        return
+
+    for prim in root.GetChildren():
+        name = prim.GetName()
+        if prim.GetPath().pathString == BOARD_PATH or "board" in name.lower():
+            continue
+
+        # Ensure piece is a rigid body
+        UsdPhysics.RigidBodyAPI.Apply(prim).CreateRigidBodyEnabledAttr(True)
+
+        # Set mass (per piece type if you like)
+        mapi = UsdPhysics.MassAPI.Apply(prim)
+        if any(k in name for k in ["King", "Queen"]):
+            mapi.CreateMassAttr(0.40)   # kg
+        elif any(k in name for k in ["Rook"]):
+            mapi.CreateMassAttr(0.30)
+        elif any(k in name for k in ["Bishop", "Knight"]):
+            mapi.CreateMassAttr(0.25)
+        else:  # Pawn or other
+            mapi.CreateMassAttr(0.18)
+
+        # PhysX stability niceties for small objects
+        pxa = PhysxSchema.PhysxRigidBodyAPI.Apply(prim)
+        pxa.CreateEnableCCDAttr(True)                 # continuous collision for small fast pieces
+        pxa.CreateLinearDampingAttr(0.05)
+        pxa.CreateAngularDampingAttr(0.05)
+
+        # If the piece uses very thin visual meshes, set sensible contact/rest offsets
+        # (restOffset < contactOffset). Helps avoid initial interpenetration jitter.
+        coll_api = PhysxSchema.PhysxCollisionAPI.Apply(prim)
+        coll_api.CreateContactOffsetAttr(0.003)       # 3 mm
+        coll_api.CreateRestOffsetAttr(0.001)          # 1 mm
+
+    print("[chess] Board set static; piece masses and physics tuned.")
+
+
 @configclass
 class LiftCubeSceneCfg(SingleArmTaskSceneCfg):
     """Scene configuration for the lift task with chess board baked into scene.usd."""
@@ -100,6 +166,7 @@ class LiftCubeEnvCfg(SingleArmTaskEnvCfg):
 
         # parse subassets from the baked scene (includes chess now)
         parse_usd_and_create_subassets(TABLE_WITH_CUBE_USD_PATH, self)
+        #stabilize_chess_set()
 
 
 
