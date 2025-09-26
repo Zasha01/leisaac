@@ -28,7 +28,7 @@ SINGLE_ARM_FEATURES = {
     },
     "observation.state": {
         "dtype": "float32",
-        "shape": (6,),
+        "shape": (7,),
         "names": [
             "shoulder_pan.pos",
             "shoulder_lift.pos",
@@ -190,7 +190,7 @@ def process_single_arm_data(dataset: LeRobotDataset, task: str, demo_group: h5py
         actions = np.array(demo_group['actions'])
         joint_pos = np.array(demo_group['obs/joint_pos'])
         front_images = np.array(demo_group['obs/front'])
-        wrist_images = np.array(demo_group['obs/wrist'])
+        wrist_images = np.array(demo_group['obs/front'])
     except KeyError:
         print(f'Demo {demo_name} is not valid, skip it')
         return False
@@ -257,7 +257,7 @@ def process_bi_arm_data(dataset: LeRobotDataset, task: str, demo_group: h5py.Gro
 
 def convert_isaaclab_to_lerobot():
     """NOTE: Modify the following parameters to fit your own dataset"""
-    repo_id = 'EverNorif/so101_test_orange_pick'
+    repo_id = 'EverNorif/test4'
     robot_type = 'so101_follower'  # so101_follower, bi_so101_follower
     fps = 30
     hdf5_root = './datasets'
