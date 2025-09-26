@@ -1,3 +1,45 @@
+## Hackathon Fork: Chess Teleop + Randomized Positions ♟️
+
+This fork turns **LeIsaac** into a fun, educational chess manipulation demo for a hackathon. The setup uses **SO101Leader → SO101Follower** teleoperation inside **Isaac Sim / Isaac Lab**, with a built-in chess set and automatic task generation:
+
+* **One-key variability:** Press `R` to load a **random chess position** (FEN).
+* **Clear instruction:** The **red square** marks the “pick from” field; the **green square** marks the “place to” field.
+* **Stable physics:** Pieces are tuned for stable contacts and realistic grasping; board is static-ish to prevent jitter.
+* **Data pipeline:** Teleop → HDF5 recording → conversion to LeRobot → fine-tune **GR00T N1.5** → optional sim2real.
+* **Gripper swap:** Demonstrates integrating a new gripper on the follower arm in Isaac assets.
+
+**Credits:** Built entirely with **NVIDIA Isaac Sim / Isaac Lab**, the chess asset provided by **REVEL**, and educational content inspired by **LycheeAI**. 🙏
+
+### Quickstart (Chess Data Collection)
+
+Use the command below to start teleoperation and record a dataset for the chess task:
+
+```bash
+python scripts/environments/teleoperation/teleop_se3_agent.py \
+    --task=LeIsaac-SO101-LiftCube-v0 \
+    --teleop_device=so101leader \
+    --port=COM5 \
+    --num_envs=1 \
+    --device=cuda \
+    --enable_cameras \
+    --record \
+    --dataset_file=./datasets/dataset.hdf5
+```
+
+**Hotkeys:**
+
+* `b` — start control
+* `r` — reset env **and** load a new random chess position (red/green fields update)
+* `n` — reset env and mark success
+
+> Tip: If you don’t have the SO101Leader connected, you can switch to keyboard control with `--teleop_device=keyboard` and omit `--port`.
+
+---
+
+
+
+
+
 # LeIsaac 🚀
 
 https://github.com/user-attachments/assets/763acf27-d9a9-4163-8651-3ba0a6a185d7
